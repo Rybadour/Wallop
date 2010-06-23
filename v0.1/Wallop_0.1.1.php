@@ -22,9 +22,9 @@
 global $_WALLOP;
 $_WALLOP['mysql'] = array();
 $_WALLOP['mysql']['host']     = 'localhost';
-$_WALLOP['mysql']['database'] = 'WallopTesting';
-$_WALLOP['mysql']['user']     = 'tester';
-$_WALLOP['mysql']['password'] = 'yj8t3g';
+$_WALLOP['mysql']['database'] = 'YourDatabase';
+$_WALLOP['mysql']['user']     = 'databaseUser';
+$_WALLOP['mysql']['password'] = 'databaseUserPassword';
 
 require_once('WallopDatabase.php');
 global $database;
@@ -34,10 +34,11 @@ $database->connect();
 
 
 
-/* Wallop v0.1
- * In this version the system is highly simplified.
- * It lacks features that provide additional flexibility in the design of your object and efficiency
- * since you can perform actions closer to what you want.
+/* Wallop v0.1.1
+ * This version offers tons of bug fixes, additional validation and feature additions from v0.1.0
+ * While v0.1.0 could be considered completely broken, this version is tested to completion, all features
+ * work as intended. There are also several performance enhancements.
+ * Many of the function names and prototypes have changed but the concepts have been kept the same.
  */
 abstract class Wallop
 {
@@ -190,10 +191,11 @@ abstract class Wallop
         $result = $database->execQuery('SHOW COLUMNS FROM `'. $this->objectInfo['tableName'].'`');
         
         // If the table doesn't exist
-
         if ( !$result )
         {  
-            $this->errors[] = 'Table \''.$this->objectInfo['tableName'] .'\' doesn\'t exist.';
+            $error  = 'constructTemplate(): Table \''.$this->objectInfo['tableName'].'\' doesn\'t '; 
+			$error .= 'exist! Check the tableName you set in the constructor.';
+			$this->errors[] = $error;
             return false;
         }
 
@@ -201,8 +203,8 @@ abstract class Wallop
 
         if ( !$rows )
         {
-            // Is this error accurate? o.0
-            $error = 'Cannot get columns for table \''.$this->objectInfo['tableName'].'\' !';
+            $error  = 'constructTemplate(): Cannot get columns for table ';
+			$error .= '\''.$this->objectInfo['tableName'].'\' !';
 			$this->errors[] = $error;
             return false;
         }
@@ -236,11 +238,14 @@ abstract class Wallop
      * Iniatilizes the object using the id to query the database
      * and fill the object
      */
-    public function initialize($id)
+    private function initialize($id)
     {
         if ( !is_scalar($id) )
 		{
-			$this->errors[] = 'Cannot initialize with the given $id, $id must not be an array or object!';
+			$error  = 'initialize(): Cannot initialize with the given $id, $id must not be an array or ';
+			$error .= 'object!';
+			$this->errors[] = $error;
+			return false;
 		}
 
 		// The template of this object must be setup first
@@ -265,8 +270,8 @@ abstract class Wallop
         $result = $database->execQuery($query, $id);
         if (!$result)
         {
-            $error  = 'Unable to Query record from Table \''.$this->objectInfo['tableName'];
-			$error .= '\' may not exist!';
+            $error  = 'initialize(): Unable to Query record from Table \''.$this->objectInfo['tableName'];
+			$error .= '\' it probably doesn\'t exist! Check the tableName you set in the constructor.';
 			$this->errors[] = $error;
             return false;
         }
@@ -274,8 +279,8 @@ abstract class Wallop
         $row = $database->getRow();
         if ( !$row )
         {
-            $error  = 'No record of the \''.$this->objectInfo['tableName'].'\' table has an id ';
-			$error .= 'of \''.$id.'\'!';
+            $error  = 'initialize(): No record of the \''.$this->objectInfo['tableName'].'\' table has an ';
+			$error .= '	id of \''.$id.'\'!';
 			$this->errors[] = $error;
             return false;
         }
@@ -338,7 +343,7 @@ abstract class Wallop
         // Check if column even exists
         if ( !in_array($column, $this->columns) )
         {
-            $error = 'Cannot get value \''.$column.'\', that column does not exist in this class!';
+            $error = 'get(): Cannot get value \''.$column.'\', that column does not exist in this class!';
 			$this->errors[] = $error;
             return false;
         }
@@ -362,7 +367,7 @@ abstract class Wallop
         // Check if column even exists
         if ( !in_array($column, $this->columns) ) 
         {
-            $error = 'Cannot set \''.$column.'\', that column does not exist in this object!';
+            $error = 'set(): Cannot set \''.$column.'\', that column does not exist in this object!';
 			$this->errors[] = $error;
             return false;
         }
@@ -370,7 +375,7 @@ abstract class Wallop
 		// Ensure that $value is a primitive type
 		if ( !is_scalar($value) )
 		{
-			$error = 'Cannot set \''.$column.'\', the value given is either an array or an object!';
+			$error = 'set(): Cannot set \''.$column.'\', the value given is either an array or an object!';
 			$this->errors[] = $error;
 		}
 
@@ -420,7 +425,17 @@ abstract class Wallop
             {
                 // Removes the record from the database if it is flagged to be removed
                 // Calls remove on composites
-                return self::removeRecursive($this, 0, $keepRelativesOnRemove);
+				$result = self::removeRecursive($this, 0, $keepRelativesOnRemove);
+				
+				if ( !$result )
+				{
+					$error  = 'commit(): Failed to delete this object or one of it\'s composites! ';
+					$error .= 'See the following for more info: ';
+					$error .= self::$staticErrors[0];
+					$this->errors[] = $error;
+				}
+				
+                return $result;
             }
 
             // Only update the database if some value was change in the set function
@@ -448,7 +463,15 @@ abstract class Wallop
 
                 $values[] = $this->id;
 
-                $database->execQueryWith($query, $values);
+                $result = $database->execQueryWith($query, $values);
+				
+				if ( !$result )
+				{
+					$error  = 'commit(): Failed to update this object! It\'s likely the tableName you ';
+					$error .= 'specified in the constructor doesn\'t exist!');
+					$this->errors[] = $error;
+					return false;
+				}
             }
         }
 
@@ -486,8 +509,8 @@ abstract class Wallop
 			{
 				unset($this->id);
 				
-				$error  = 'commit(): There was an error when trying to insert the new object, because: ';
-				$error .= $database->error;
+				$error  = 'commit(): There was an error when trying to insert the new object! ';
+				$error .= 'It\'s likely the tableName you specified in the constructor doesn\'t exist! ';
 				$this->errors[] = $error;
 				return false;
 			}
@@ -545,10 +568,12 @@ abstract class Wallop
 					$numObjs = count($relation['uninitializedNewObjects']);
 					while ($i != $numObjs)
 					{					
-						if ( $relation['uninitializedNewObjects'][$i]->commit(true, true) )
+						$relative = $relation['uninitializedNewObjects'][$i];
+					
+						if ( $relative->commit(true, true) )
 						{
-							$id = $relation['uninitializedNewObjects'][$i]->id;
-							$relation['objects'][$id]	= $relation['uninitializedNewObjects'][$i];
+							$id = $relative->id;
+							$relation['objects'][$id]	= $relative;
 							$relation['newObjects'][$id] = true;
 							
 							unset($relation['uninitializedNewObjects'][$i]);
@@ -556,7 +581,7 @@ abstract class Wallop
 						else
 						{
 							$relativeErrors = $relative->getErrors();
-							$error  = 'A problem occurred when trying to commit an uninitialized'; 
+							$error  = 'commit(): A problem occurred when trying to commit an uninitialized';
 							$error .= ' object of type '.$relationClassName.' with the following';
 							$error .= ' error: "'.$relativeErrors[0].'"';					
 							$this->errors[] = $error;
@@ -587,6 +612,7 @@ abstract class Wallop
 				{
 					// Create the string filled with ids of objects to remove
 					// from the relation table between this object and this relation
+					$compsToRemove = array();
 					$numToRemove = 0;
 					$idsToRemove = '(';
 					foreach ($relation['removedObjects'] as $id => $unused)
@@ -628,17 +654,39 @@ abstract class Wallop
 					$compIds = array();
 					if ($relationTypeName == 'composites')
 					{
-						// TODO: $compsToRemove is not setup properly making this function fail
-						$compIds = self::hasNoCompositeRelatives($relationTemplate, $relationClassName, $relativeColumn,
+						$compIds = self::hasNoCompositeRelatives($relationTemplate, $relationClassName, 
+																 $relativeColumn,
 						                                         $relation['relationTableName'], 
 														         $this->id, $thisColumn, $compsToRemove);
+																 
+						if ( !$compIds )
+						{
+							$error  = 'commit(): Failed to retrieve information about what composites to ';
+							$error .= 'remove. Because: ';
+							$error .= self::$staticErrors[0];
+							$this->errors[] = $error;
+							return false;
+						}
 					}
 					
 					// Create the query to remove relatives from the relation table
 					$query  = 'DELETE FROM `'.$relation['relationTableName'].'` ';
 					$query .= 'WHERE `'.$relativeColumn.'` IN '.$idsToRemove.' && `'.$thisColumn.'`=';
 					$query .= $this->id.' LIMIT '.$numToRemove;
-					$database->execQuery($query);
+					$result = $database->execQuery($query);
+					
+					// Ensure the database query executed as expected
+					if ( !$result )
+					{
+						$error  = 'commit(): The query to delete the records of the relation table between ';
+						$error .= 'the relation `'.$relationClassName.'` and this object has failed! ';
+						$error .= 'This is likely due to an incorrect database setup or wrong values ';
+						$error .= 'specified in the constructor. Check to make sure the column names ';
+						$error .= 'of the relation table `'.$relation['relationTableName'].'` are setup ';
+						$error .= 'setup properly and that the table exists';
+						$this->errors[] = $error;
+						return false;
+					}
 					
 					// After the deletion of the relation table records
 					if ($relationTypeName == 'composites' && !empty($compIds))
@@ -647,7 +695,16 @@ abstract class Wallop
 						$i = 0;
 						while ($i != $size)
 						{
-							self::removeRecursive($relationTemplate, $compIds[$i], false);
+							$result = self::removeRecursive($relationTemplate, $compIds[$i], false);
+							
+							if ( !$result )
+							{
+								$error  = 'commit(): Failed to delete this composite relation: ';
+								$error .= '`'.$relation['relationTableName'].' See the following for more ';
+								$error .= 'info: ';
+								$error .= self::$staticErrors[0];
+								$this->errors[] = $error;
+							}
 							
 							++$i;
 						}
@@ -676,8 +733,20 @@ abstract class Wallop
 						}
 						$query = trim($query, ',');
 						
-						$database->execQuery($query);
+						$result = $database->execQuery($query);
 						
+						// Ensure the database query executed as expected
+						if ( !$result )
+						{
+							$error  = 'commit(): Inserting new relatives into the database for relation ';
+							$error .= '`'.$relationClassName.'` failed! ';
+							$error .= 'This is likely due to an incorrect database setup or wrong values ';
+							$error .= 'specified in the constructor. Check to make sure the column names ';
+							$error .= 'of the relation table `'.$relation['relationTableName'].'` are setup ';
+							$error .= 'setup properly and that the table exists';
+							$this->errors[] = $error;
+							return false;
+						}
 						
 						// Iterate through storedGets and remove them if their result set changed
 						if ( isset($relation['storedGets']) )
@@ -787,14 +856,20 @@ abstract class Wallop
 		
         if (!$result)
         {
-            $this->errors[] = 'Could not query the database to get relatives!';
+            $error  = 'checkNewAgainstStoredGet(): Could not query the database to get relatives!';
+			$error .= 'This is likely due to an incorrect database setup or wrong values ';
+			$error .= 'specified in the constructor. Check to make sure the column names ';
+			$error .= 'of the relation table `'.$relation['relationTableName'].'` are setup ';
+			$error .= 'setup properly and that the table exists';
+			$this->errors[] = $error;
             return false;
         }
 		
 		$row = $database->getRow();
 		if (!$row)
 		{
-			$error = 'Apparently my private function can\'t do a private function without failing.';
+			$error  = 'checkNewAgainstStoredGet(): Apparently my private function can\'t do a private ';
+			$error .= 'function without failing. But that\'s not my fault, you better fix it!';
 			$this->errors[] = $error;
 			
 			// Return true because then the storedGet won't be removed.
@@ -810,7 +885,7 @@ abstract class Wallop
     {
         if ( !isset($this->id) )
         {
-            $this->errors[] = 'Cannot remove this object, it must be initialized first!';
+            $this->errors[]  = 'remove(): Cannot remove this object, it must be initialized first!';
             return false;
         }
 
@@ -826,7 +901,8 @@ abstract class Wallop
     {
         if ( !isset($this->objectInfo['toBeRemoved']) || !$this->objectInfo['toBeRemoved'] )
         {
-            $this->errors[] = 'Cannot unremove this object, it is not already flagged for removal!';
+            $error  = 'unremove(): Cannot unremove this object, it is not already flagged for removal!';
+			$this->errors[] = $error;
             return false;
         }
 
@@ -863,7 +939,7 @@ abstract class Wallop
 	{
 		if ( $relationName == '' || !is_string($relationName) )
         {
-            $error = 'getInternalRelatives() must take a non-null $relationName that is a string!';
+            $error = 'getNewRelatives(): must take a non-null $relationName that is a string!';
 			$this->errors[] = $error;
             return false;
         }
@@ -882,7 +958,7 @@ abstract class Wallop
 			}
 			else
 			{
-				$error  = 'Cannot retrieve relatives for relation \''.$relationName;
+				$error  = 'getNewRelatives(): Cannot retrieve relatives for relation \''.$relationName;
 				$error .= '\' it does not exist in this object!';
 				$this->errors[] = $error;
 				return false;
@@ -894,7 +970,7 @@ abstract class Wallop
         if ( !$relativeTemplate->constructTemplate() )
         {
             $this->errors = array_merge($this->errors, $relativeTemplate->getErrors());
-            $this->errors[] = 'Could not construct a template of \''.$relationName.'\'!';
+            $this->errors[] = 'getNewRelatives(): Could not construct a template of \''.$relationName.'\'!';
             return false;
         }
 		if ( !empty($relationTemplate->errors) )
@@ -909,13 +985,25 @@ abstract class Wallop
 		
 		// Get the ids of the uncomitted relatives from the objects array
 		$relatives = array();
-		foreach ($targetArray['newObjects'] as $id => $unused)
+		
+		if ( isset($targetArray['newObjects']) )
 		{
-			$relatives[] = $targetArray['objects'][$id];
+			foreach ($targetArray['newObjects'] as $id => $unused)
+			{
+				$relatives[] = $targetArray['objects'][$id];
+			}
 		}
-		foreach ($targetArray['uninitializedNewObjects'] as $id => $unused)
+		
+		if ( isset($targetArray['uninitializedNewObjects']) )
 		{
-			$relatives[] = $targetArray['objects'][$id];
+			$i = 0;
+			$numUninitialized = count($targetArray['uninitializedNewObjects']);
+			while ($i != $numUninitialized)
+			{
+				$relatives[] = $targetArray['uninitializedNewObjects'][$i];
+				
+				++$i;
+			}
 		}
 		
 		return $relatives;
@@ -932,16 +1020,16 @@ abstract class Wallop
 		// If the object is uninitialized...
 		if ( !isset($this->id) || $this->id == '' || intval($this->id) < 1)
         {
-            $error  = 'Cannot retrieve relatives when this object is not initialized! ';
+            $error  = 'getRelatives(): Cannot retrieve relatives when this object is not initialized! ';
 			$error .= 'If you want to retrieve relatives stored in this object (and not from the ';
-			$error .= 'database) then use the getInternalRelatives() function ';
+			$error .= 'database) then use the getNewRelatives() function ';
 			$this->errors[] = $error;
             return false;
         }
 
         if ( $relationName == '' || !is_string($relationName) )
         {
-            $error  = 'getRelatives() must take a non-null $relationName that is not an array';
+            $error  = 'getRelatives(): must take a non-null $relationName that is not an array';
 			$error .= ' or object!';
 			$this->errors[] = $error;
             return false;
@@ -961,8 +1049,8 @@ abstract class Wallop
 			}
 			else
 			{
-				$error  = 'Cannot retrieve relatives for relation \''.$relationName.'\' it does ';
-				$error .= 'not exist in this object!';
+				$error  = 'getRelatives(): Cannot retrieve relatives for relation \''.$relationName.'\' ';
+				$error .= 'it does not exist in this object!';
 				$this->errors[] = $error;
 				return false;
 			}
@@ -972,7 +1060,7 @@ abstract class Wallop
         $relativeTemplate = new $relationName();
         if ( !$relativeTemplate->constructTemplate() )
         {
-			$this->errors[] = 'Could not construct a template of \''.$relationName.'\'!';
+			$this->errors[] = 'getRelatives(): Could not construct a template of \''.$relationName.'\'!';
 			$this->errors[] = 'getRelatives: Errors after this are for $relativeTemplate:';
             $this->errors = array_merge($this->errors, $relativeTemplate->getErrors());
             $this->errors[] = 'End of errors from $relativeTemplate';
@@ -980,7 +1068,7 @@ abstract class Wallop
         }
 		if ( !empty($relationTemplate->errors) )
 		{
-			$error  = 'commit(): Cannot continue with relation \''.$relationName.'\' ';
+			$error  = 'getRelatives():  Cannot continue with relation \''.$relationName.'\' ';
 			$error .= 'the relation does not construct without error, check it\'s configuration!';
 			$error .= 'The following error is the relation\'s error:';
 			$this->errors[] = $error;
@@ -1011,7 +1099,7 @@ abstract class Wallop
         $amount = intval($amount);
 		if ($amount < -1)
 		{
-			$this->errors[] = 'getMany(); $amount cannot be less than -1!';
+			$this->errors[] = 'getRelatives():  $amount cannot be less than -1!';
 		}
         if ($amount == -1)
             $amount = '18446744073709551615';
@@ -1099,7 +1187,7 @@ abstract class Wallop
         $query .= ' FROM `'.$relativeTemplate->objectInfo['tableName'].'` AS other,';
             $query .= '(SELECT `'.$relativeColumn.'` FROM ';
             $query .= '`'.$targetArray[$relationName]['relationTableName'].'` ';
-            $query .= 'WHERE `'.$thisColumn.'`='.$this->id.' LIMIT '.$start.','.$amount.') ';
+            $query .= 'WHERE `'.$thisColumn.'`='.$this->id.') ';
             $query .= 'AS ids ';
         $query .= 'WHERE other.`id`=ids.`'.$relativeColumn.'`';
 		
@@ -1112,17 +1200,20 @@ abstract class Wallop
 		{
 			$query .= ' ORDER BY other.`'.$sortBy.'` '.$sort;
 		}
-
-			
+		
+		// Apply $start and $amount to the query
+		$query .= ' LIMIT '.$start.','.$amount;
+		
         global $database;
         $result = $database->execQuery($query);
 		
         if (!$result)
         {
-            $error  = 'Could not query the database to get relatives! Because: ';
-			$error .= $database->error;
+            $error  = 'getRelatives(): Could not query the database to get relatives! Because: ';
+			$error .= $database->error.' ';
+			$error .= 'This is likely due to a mismatch between the database structure and the columns ';
+			$error .= 'and/or table names you specified in the constructor of this object.';
 			$this->errors[] = $error;
-			$this->errors[] = 'Query was: \''.$query.'\'';
             return false;
         }
 
@@ -1133,7 +1224,8 @@ abstract class Wallop
 			if ( is_array($rows) )
 				return array();
 							
-            $this->errors[] = 'Failed to get the records of the relatives from the database!';
+            $error = 'getRelatives(): Failed to get the records of the relatives from the database!';
+			$this->errors[] = $error;
             return false;
         }
 		
@@ -1144,9 +1236,10 @@ abstract class Wallop
         while ($i != $numRows)
         {
 			// If the flag to replace the relative with internal is set then replace
-			if ( $replaceWithModified && isset($targetArray[$relationName]['modifiedObjects'][$rows[$i]['id']]) )
+			if ( $replaceWithModified && 
+			     isset($targetArray[$relationName]['modifiedObjects'][$rows[$i]['id']]) )
 			{
-				$relative = $targetArray[$relationName]['modifiedObjects'][$rows[$i]['id']];
+				$relative = $targetArray[$relationName]['objects'][$rows[$i]['id']];
 			}
 			else
 			{
@@ -1222,6 +1315,14 @@ abstract class Wallop
 	 */
 	public function unsetStoredRelatives($relationToRemove = null, $unsetAll = false)
 	{
+		if ( isset($relationToRemove) && !is_string($relationToRemove) )
+		{
+			$error  = 'unsetStoredRelatives(): You must provide either a string of the relation name or ';
+			$error .= 'null for the first argument!';
+			$this->errors[] = $error;
+			return false;
+		}
+	
 		// An anonymous function used to keep this function effecient and yet
 		// unify the code into one block
 		$unsetRelationFunc = function (&$relation) use ($unsetAll)
@@ -1236,12 +1337,15 @@ abstract class Wallop
 			}
 			else
 			{
-				foreach ($relation['objects'] as $objId => $unused)
+				if ( isset($relation['objects']) )
 				{
-					if ( !isset($relation['modifiedObjects'][$objId]) &&
-						 !isset($relation['newObjects'][$objId]) )
+					foreach ($relation['objects'] as $objId => $unused)
 					{
-						unset($relation['objects'][$objId]);
+						if ( !isset($relation['modifiedObjects'][$objId]) &&
+							 !isset($relation['newObjects'][$objId]) )
+						{
+							unset($relation['objects'][$objId]);
+						}
 					}
 				}
 			}
@@ -1254,21 +1358,37 @@ abstract class Wallop
 		$relationTypes[] = &$this->aggregates;
 		$relationTypes[] = &$this->composites;
 		
-		foreach ($relationTypes as &$relationType)
+		if ( isset($relationToRemove) )
 		{
-			if ( isset($relationToRemove) )
+			$found = false;
+			foreach ($relationTypes as &$relationType)
 			{
 				if ( isset($relationType[$relationToRemove]) )
 				{
 					$relation = &$relationType[$relationToRemove];
 					
-					$unsetRelation($relation, $unsetAll);
+					$unsetRelationFunc($relation, $unsetAll);
+					
+					$found = true;
 				}
 			}
-		
-			foreach ($relationType as $relationName => &$relation)
-			{	
-				$unsetRelation($relation, $unsetAll);
+			
+			if ( !$found )
+			{
+				$error  = 'unsetStoredRelatives(): Relation `'.$relationToRemove.'` does not exist for ';
+				$error .= 'this class!';
+				$this->errors[] = $error;
+				return false;
+			}
+		}
+		else
+		{
+			foreach ($relationTypes as &$relationType)
+			{
+				foreach ($relationType as $relationName => &$relation)
+				{	
+					$unsetRelationFunc($relation, $unsetAll);
+				}
 			}
 		}
 		
@@ -1288,7 +1408,7 @@ abstract class Wallop
 	
 		if ( $relationName == '' || !is_string($relationName) )
 		{
-			$this->errors[] = 'In getRelatives(): $relationName must be a non-empty string!';
+			$this->errors[] = 'setRelatives(): $relationName must be a non-empty string!';
 			return false;
 		}
 	
@@ -1310,7 +1430,7 @@ abstract class Wallop
         // It wasn't in either one? Well, fuck - they gave a non-relative Wallop type
         else
         {
-            $this->errors[] = 'Tried to add Wallops of a non-relative type!';
+            $this->errors[] = 'setRelatives(): Tried to add Wallops of a non-relative type!';
             return false;
         }
 
@@ -1319,7 +1439,7 @@ abstract class Wallop
 		if ( is_bool($arrHasRelatives) && !$arrHasRelatives )
 		{
 			$error = 'setRelatives(): hasRelatives() failed to check relatives! See previous errors.';
-			$this->errors = $error;
+			$this->errors[] = $error;
 			return false;
 		}
 		
@@ -1330,7 +1450,7 @@ abstract class Wallop
             // Make sure this Wallop is an instance of the Wallop type they specified.
             if ( !($relative instanceof $relationName) )
             {
-                $this->errors[] = 'Tried to add a Wallop of the wrong type!';
+                $this->errors[] = 'setRelatives(): Tried to add a Wallop of the wrong type!';
                 continue;
             }
 
@@ -1345,15 +1465,17 @@ abstract class Wallop
 					// Only add a mapping to the 
 					if ( !isset($targetArray['newObjects'][$id]) )
 						$targetArray['modifiedObjects'][$id] = true;
-
-					// Remove any removal marks for this relative
-					if( isset($targetArray[$relationName]['removedObjects']) )
-						unset($targetArray['removedObjects'][$relative->id]);
 				}
 				else
 				{
 					$targetArray['newObjects'][$id] = true;
 				}
+				
+				// Remove any removal marks for this relative
+				if ( isset($targetArray['removedObjects']) )
+					unset($targetArray['removedObjects'][$relative->id]);
+				if ( isset($targetArray['removedStoredObjects']) )
+					unset($targetArray['removedStoredObjects'][$relative->id]);
 				
 				// Before we override the object at this id, check if a storedGet maps to it
 				if ( !isset($targetArray['originalObjects'][$id]) && isset($targetArray['storedGets']) )
@@ -1401,14 +1523,15 @@ abstract class Wallop
 	
 		if ( $relationName == '' || !is_string($relationName) )
 		{
-			$this->errors[] = 'In removeRelatives(): $relationName must be a non-empty string!';
+			$this->errors[] = 'removeRelatives(): $relationName must be a non-empty string!';
 			return false;
 		}
 	
 		// Setup a template for the relative's object
         if ( !class_exists($relationName) || !is_subclass_of($relationName, 'Wallop') )
         {
-            $error = 'Cannot remove relation '.$relationName.' it is does not inherit from Wallop!';
+            $error  = 'removeRelatives(): Cannot remove relation '.$relationName.' it is does not inherit ';
+			$error .= 'from Wallop!';
 			$this->errors[] = $error;
             return false;
         }
@@ -1426,8 +1549,8 @@ abstract class Wallop
 			}
 			else
 			{
-				$error  = 'Cannot remove relation '.$relationName.' it does not relate to this ';
-				$error .= 'object!';
+				$error  = 'removeRelatives(): Cannot remove relation '.$relationName.' it does not relate ';
+				$error .= 'to this object!';
 				$this->errors[] = $error;
 				return false;
 			}
@@ -1439,7 +1562,7 @@ abstract class Wallop
 			// Ignore it but notify
 			if ( !$relative instanceof Wallop )
 			{
-				$this->errors[] = 'Cannot remove relative it is not a Wallop object!';
+				$this->errors[] = 'removeRelatives(): Cannot remove relative it is not a Wallop object!';
 				continue;
 			}
 			if ( !isset($relative->id) )
@@ -1454,8 +1577,8 @@ abstract class Wallop
 			// Ignore it but notify
 			if ( !$relative instanceof $relationName )
 			{
-				$error  = 'Cannot remove relative with id = '.$relId.' it is not belong to the ';
-				$error .= '\''.$relationName.'\' relation!';
+				$error  = 'removeRelatives(): Cannot remove relative with id = '.$relId.' it is not belong ';
+				$error .= 'to the \''.$relationName.'\' relation!';
 				$this->errors[] = $error;
 				continue;
 			}
@@ -1479,7 +1602,7 @@ abstract class Wallop
     {    
 		if ( $relationName == '' || !is_string($relationName) )
 		{
-			$this->errors[] = 'In hasRelatives(): $relationName must be a non-empty string!';
+			$this->errors[] = 'hasRelatives(): $relationName must be a non-empty string!';
 			return false;
 		}
 	
@@ -1498,7 +1621,8 @@ abstract class Wallop
             }
             else
             {
-                $error = 'The relation \''.$relationName.'\' is not specified in this class!';
+                $error  = 'hasRelatives(): The relation \''.$relationName.'\' is not specified in this ';
+				$error .= 'class!';
 				$this->errors[] = $error;
                 return false;
             }
@@ -1507,7 +1631,7 @@ abstract class Wallop
 		$relativeTemplate = new $relationName();
         if (!$relativeTemplate instanceof Wallop)
         {
-            $error = 'hasRelatives() cannot take a classname that does not inherit from Wallop!';
+            $error = 'hasRelatives(): cannot take a classname that does not inherit from Wallop!';
 			$this->errors[] = $error;
             return false;
         }
@@ -1528,8 +1652,16 @@ abstract class Wallop
 
 			// Create an in list of relative's ids
 			$inList = '(';
-			foreach($relatives as &$relative)
+			foreach($relatives as $key => &$relative)
 			{
+				if ( !is_object($relative) || !$relative instanceof Wallop )
+				{
+					$error  = 'hasRelatives(): $relatives array must only contain Wallop inheriting ';
+					$error .= 'objects!';
+					$this->errors[] = $error;
+					return false;
+				}
+			
 				$id = $relative->getId();
 				
 				if ( !$id )
@@ -1537,20 +1669,26 @@ abstract class Wallop
 					// If the flag $returnOnlyTrue is set, no reason to give an error
 					if ( !$returnOnlyTrue )
 					{
-						$error  = 'Object passed to hasRelatives() of type '.$relationName;
+						$error  = 'hasRelatives(): Object passed to hasRelatives() of type '.$relationName;
 						$error .= ' is not initialized!';
 						$this->errors[] = $error;
 					}
+					
+					// So it doesn't effect later code
+					unset($relatives[$key]);
 					continue;
 				}
 
 				if ( !$relative instanceof $relationName )
 				{
-					$this->errors[] = 'Object with id='.$id.' is not of type '.$relationName.'!';
+					$error = 'hasRelatives(): Object with id='.$id.' is not of type '.$relationName.'!';
+					$this->errors[] = $error;
 					
 					if ( !$returnOnlyTrue )
 						$output[$id] = false;
 						
+					// So it doesn't effect later code
+					unset($relatives[$key]);
 					continue;
 				}
 				
@@ -1562,21 +1700,32 @@ abstract class Wallop
 			unset($relative);
 			$inList = trim($inList, ',').')';
 			
-			$query  = 'SELECT `'.$relativeColumn.'` AS id FROM `'.$relationTableName.'`';
-			$query .= ' WHERE `'.$thisColumn.'`='.$this->id.' AND `'.$relativeColumn.'` IN '.$inList;
-
-			global $database;
-			
-			if ( !$database->execQuery($query) )
+			// If the inList is empty...
+			if ( $inList == '()' )
 			{
-				$error  = 'hasRelatives(): The query to check the database failed -- '.$database->error;
-				$this->errors[] = $error;
-				return false;
-			}
-			$rows = $database->getAllRows();
-
-			if (!$rows || !is_array($rows))
 				$rows = array();
+			}
+			else
+			{
+				$query  = 'SELECT `'.$relativeColumn.'` AS id FROM `'.$relationTableName.'`';
+				$query .= ' WHERE `'.$thisColumn.'`='.$this->id.' AND `'.$relativeColumn.'` IN '.$inList;
+
+				global $database;
+				
+				if ( !$database->execQuery($query) )
+				{
+					$error  = 'hasRelatives(): The query to check the database failed -- ';
+					$error .= $database->error.' This was likely due to a mismatch between the database ';
+					$error .= 'structure and the columns and/or table name you specified in the ';
+					$error .= 'constructor	of this object!';
+					$this->errors[] = $error;
+					return false;
+				}
+				$rows = $database->getAllRows();
+
+				if (!$rows || !is_array($rows))
+					$rows = array();
+			}
 			
 			$i = 0;
 			$numRows = count($rows);
@@ -1588,23 +1737,43 @@ abstract class Wallop
 			}
 		}
 
-		// Relatives marked as new will be set to true
-        if ( isset($targetArray[$relationName]['newObjects']) )
+		if ($checkStoredRelatives)
 		{
-            foreach ($targetArray[$relationName]['newObjects'] as $newId => $unused)
-            {
-				if ( isset($output[$newId]) )
-					$output[$newId] = true;
-            }
-		}
-		
-		// Relatives marked for removal will be set to false
-		if ( isset($targetArray[$relationName]['removedStoredObjects']) && !$returnOnlyTrue)
-		{
-			foreach  ($targetArray[$relationName]['removedStoredObjects'] as $remId => $unused)
+			foreach ($relatives as $relative)
 			{
-				if ( isset($output[$remId]) )
-					$output[$remId] = false;
+				$relId = $relative->id;
+				
+				// If this relative is stored and is set to be removed
+				if ( isset($targetArray[$relationName]['removedStoredObjects'][$relId]) )
+				{
+					if ($returnOnlyTrue)
+						unset($output[$relId]);
+					else
+						$output[$relId] = false;
+				}
+				else
+				{
+					// If this relative is only found in the database but it is marked for
+					// removal
+					if ( isset($targetArray[$relationName]['removedObjects'][$relId]) )
+					{
+						if ($returnOnlyTrue)
+							unset($output[$relId]);
+						else
+							$output[$relId] = false;
+					}
+					else
+					{
+						// If we have a new object with the relative's id
+						if ( isset($targetArray[$relationName]['newObjects'][$relId]) )
+							$output[$relId] = true;
+						else
+						{
+							if ( !isset($this->id) && !$returnOnlyTrue )
+								$output[$relId] = false;
+						}
+					}
+				}
 			}
 		}
 		
@@ -1708,7 +1877,17 @@ abstract class Wallop
 		
 			// Delete the records on the relation table
             $query = 'DELETE FROM `'.$aggregate['relationTableName'].'` WHERE `'.$columnName.'` = ?';
-            $database->execQuery($query, $objectId);
+            $result = $database->execQuery($query, $objectId);
+			
+			if ( !$result )
+			{
+				$staticError  = 'Failed to delete the records on the relation table ';
+				$staticError .= '`'.$aggregate['relationTableName'].'`. ';
+				$staticError .= 'This was likely due to a mismatch between the database structure and the ';
+				$staticError .= 'columns and/or table name you specified in the constructor of this object!';
+				self::$staticErrors[] = $staticError;
+				return false;
+			}
         }
 		
         foreach ($object->composites as $compClassName => &$composite)
@@ -1719,33 +1898,19 @@ abstract class Wallop
             // if the relative is the same type
             if ( $compObj->objectInfo['tableName'] == $object->objectInfo['tableName'] )
                 $compColumnName .= '2';
-
-				
-			// TODO: Leave until after testing, then remove
-			/*
-            $query  = 'SELECT `'.$compColumnName.'` FROM `'.$composite['relationTableName'].'` '; 
-			$query .= 'WHERE `'.$columnName.'`='.$objectId;
-            $database->execQuery($query);
-            $rows = $database->getAllRows();
-          
-			// There are no composites related to this object of this type
-			if (!$rows)
-				break;
-		  
-			// and remove this
-            $compIds = array();
-            foreach ($rows as $row)
-			{
-                $compIds[] = $row[$compColumnName];
-			}
-			*/
-
 			
             // Now that we have retrieved the ids of our composites
 			$compIds = 
 				self::hasNoCompositeRelatives($compObj, $compClassName, $compColumnName,
 											  $composite['relationTableName'],
 											  $objectId, $columnName);
+											  
+			// Just return false, the public function using this function will use the error created
+			// by hasNoCompositeRelatives() to explain what happened
+			if ( !$compIds )
+			{
+				return false;
+			}
 											  
 			// If the flag to keep relatives is set then get all aggregates
 			// and store as newObjects
@@ -1796,13 +1961,25 @@ abstract class Wallop
 			// remove all relations for this composite before recursing
             $query  = 'DELETE FROM `'.$composite['relationTableName'].'` ';
 			$query .= 'WHERE `'.$columnName.'`='.$objectId;
-            $database->execQuery($query);
+            $result = $database->execQuery($query);
+			
+			if ( !$result )
+			{
+				$staticError  = 'Failed to delete the records on the relation table ';
+				$staticError .= '`'.$composite['relationTableName'].'`. ';
+				$staticError .= 'This was likely due to a mismatch between the database structure and the ';
+				$staticerror .= 'columns and/or table name you specified in the constructor of this object!';
+				self::$staticErrors[] = $staticError;
+				return false;
+			}
 			
 			$i = 0;
 			$size = count($compIds);
 			while ($i != $size)
 			{
-				self::removeRecursive($compObj, $compIds[$i], false);
+				// Try to recursively remove composites
+				if ( !self::removeRecursive($compObj, $compIds[$i], false) )
+					return false;
 				
 				++$i;
 			}
@@ -1813,8 +1990,17 @@ abstract class Wallop
 		unset($object->objectInfo['valueChanged']);
 
         $query = 'DELETE FROM `'.$object->objectInfo['tableName'].'` WHERE `id` = ? LIMIT 1';
-        $database->execQuery($query, $objectId);
+        $result = $database->execQuery($query, $objectId);
 
+		if ( !$result )
+		{
+			$staticError  = 'Failed to delete the record of composite `'.$object->objectInfo['tableName'].' ';
+			$staticError .= 'This was likely due to a mismatch between the database structure and the ';
+			$staticError .= 'columns and/or table name you specified in the constructor of this object!';
+			self::$staticErrors[] = $staticError;
+			return false;
+		}
+		
         return true;
     }
 	
@@ -1852,7 +2038,17 @@ abstract class Wallop
 			// If compIds is not set then query from the database the ids
 			$query  = "SELECT `{$compColumn}` FROM `{$thisRelationTable}` ";
 			$query .= "WHERE `{$thisColumn}` = {$thisId}";
-			$database->execQuery($query);
+			$result = $database->execQuery($query);
+			
+			if ( !$result )
+			{
+				$staticError  = 'Failed to retrieve records of this composite (`'.$thisRelationTable.'`) ';
+				$staticError .= 'This was likely due to a mismatch between the database structure and the ';
+				$staticError .= 'columns and/or table name you specified in the constructor of this object!';
+				self::$staticErrors[] = $staticError;
+				return false;
+			}
+			
 			$rows = $database->getAllRows();
 
 			// Returned an empty result set
@@ -1877,50 +2073,67 @@ abstract class Wallop
 			unset($rows);
 		}
 			
-		// Foreach relation of this composite build keys in the master array for composites that 
-		// only have 0 composite relations to them
-		$secondCompColumn = self::columnNameGenerator($compObj->objectInfo['tableName']);
+		// Foreach relation of this composite remove keys from the master array for composites that 
+		// only have any other composite relations to them
+		$secondCompColumnBase = self::columnNameGenerator($compObj->objectInfo['tableName']);
 		$compRelationTypes = array(&$compObj->aggregates, &$compObj->composites);
 		foreach ($compRelationTypes as $compRelationType)
 		{
 			foreach ($compRelationType as $compRelationClassName => $compRelation)
 			{
 				// If this relation has the composite also as a composite relation
-				if ($thisRelationTable != $compRelation['relationTableName'])
+				$compRelationObj = new $compRelationClassName();
+				$compRelationColumn = self::columnNameGenerator($compRelationObj->objectInfo['tableName']);
+				
+				// If the comp and the relation are the same type add a suffix to the comp's column
+				$secondCompColumn = $secondCompColumnBase;
+				if ($compObj->objectInfo['tableName'] == $compRelationObj->objectInfo['tableName'])
+					$secondCompColumn .= '2';
+				
+				if ( isset($compRelationObj->composites[$compClassName]) )
 				{
-					$compRelationObj = new $compRelationClassName();
-					
-					if ( isset($compRelationObj->composites[$compClassName]) )
-					{
-						$query  = "SELECT `{$secondCompColumn}` ";
-						$query .= "FROM `{$compRelation['relationTableName']}` ";
-						$query .= "WHERE `{$secondCompColumn}` IN {$inList}";
+					$query  = "SELECT `{$secondCompColumn}` ";
+					$query .= "FROM `{$compRelation['relationTableName']}` ";
+					$query .= "WHERE `{$secondCompColumn}` IN {$inList}";
+					// Add a claus to not
+					if ($thisRelationTable == $compRelation['relationTableName'])
+						$query .= " AND `{$compRelationColumn}` != {$thisId}";
 
-						$database->execQuery($query);
-						$rows = $database->getAllRows();
+					$result = $database->execQuery($query);
+					
+					if ( !$result )
+					{
+						$staticError  = 'Failed to retrieve records of this composite (`';
+						$staticError .= $thisRelationTable.'`) This was likely due to a mismatch between ';
+						$staticError .= 'the database structure and the columns and/or table name you ';
+						$staticError .= 'specified in the constructor of this object!';
+						self::$staticErrors[] = $staticError;
+						return false;
+					}
+					
+					$rows = $database->getAllRows();
+					
+					$rowId = 0;
+					$numRows = count($rows);
+					while ($rowId != $numRows)
+					{
+						$id = $rows[$rowId][$secondCompColumn];
 						
-						$rowId = 0;
-						$numRows = count($rows);
-						while ($rowId != $numRows)
+						unset($ids[$id]);
+						
+						$inList = str_replace_once(','.$id.',', ',', $inList, $found);
+						if (!$found)
 						{
-							$id = $rows[$rowId][$secondCompColumn];
+							unset($found);
+							$inList = str_replace_once('('.$id.',', '(', $inList, $found);
 							
-							unset($ids[$id]);
-							
-							$inList = str_replace_once(','.$id.',', ',', $inList, $found);
 							if (!$found)
 							{
-								unset($found);
-								$inList = str_replace_once('('.$id.',', '(', $inList, $found);
-								
-								if (!$found)
-								{
-									$inList = str_replace_once(','.$id.')', ')', $inList);
-								}
+								$inList = str_replace_once(','.$id.')', ')', $inList);
 							}
-							
-							++$rowId;
 						}
+						
+						++$rowId;
 					}
 				}
 			}
@@ -1938,16 +2151,25 @@ abstract class Wallop
     /* Returns an $amount number of $tableName objects in the $sort order on the column $sortBy with 
 	 * $conditions
      */
-    public static function getMany($className, $amount = -1, $start = 0, $sortBy = '',
+    public static function getMany($className, $start = 0, $amount = -1, $sortBy = '',
 	                                                  $sort = 'ASC', $conditions = '')
     {
         if ( $className == '' || !is_string($className) )
         {
-            $staticError = 'getMany() must take at least the name of the class to get records for!';
+            $staticError = 'getMany(): must take at least the name of the class to get records for!';
 			self::$staticErrors[] = $staticError;
             return false;
         }
 
+		// Ensure the className exists and it inherits Wallop
+		if ( !class_exists($className) || !is_subclass_of($className, 'Wallop') )
+		{
+			$staticError  = 'getMany(): class `'.$className.'` does not exist or does not inherit Wallop! ';
+			$staticError .= 'Cannot retrieve the objects from the database...';
+			self::$staticErrors[] = $staticError;
+			return false;
+		}
+		
         // Instantiate the type of object to get records for
         $objectTemplate = new $className();
 		if ( !$objectTemplate->constructTemplate() )
@@ -1960,7 +2182,7 @@ abstract class Wallop
         }
 		if ( !empty($objectTemplate->errors) )
 		{
-			$staticError  = 'commit(): Cannot continue with object \''.$className.'\', ';
+			$staticError  = 'getMany(): Cannot continue with object \''.$className.'\', ';
 			$staticError .= 'the object does not construct without error, check it\'s configuration!';
 			$staticError .= 'The following error is the object\'s error:';
 			self::$staticErrors[] = $staticError;
@@ -2012,7 +2234,7 @@ abstract class Wallop
 			// Make sure $sortBy is a column in the relatives table
 			if ( strtoupper($sort) != 'ASC' && strtoupper($sort) != 'DESC')
 			{
-				self::$staticErrors[] = '$sort must either be \'ASC\' or \'DESC\'!';
+				self::$staticErrors[] = 'getMany(): $sort must either be \'ASC\' or \'DESC\'!';
 				return false;
 			}
 		}
@@ -2020,41 +2242,51 @@ abstract class Wallop
 		//  Validate $conditions
 		if ( !is_string($conditions) )
 		{
-			self::$staticErrors[] = '$conditions must be a sting!';
+			self::$staticErrors[] = 'getMany(): $conditions must be a sting!';
 		}
         // End of validation
         // We now assume all input is valid
 
         global $database;
-        $query = 'SELECT '; 
+        $query = 'SELECT `id`,'; 
 		$i = 0;
 		$numColumns = count($columns);
 		while ($i != $numColumns)
 		{
-			$query .= $columns[$i].',';
+			$query .= '`'.$columns[$i].'`,';
 			++$i;
 		}
-		$query .= ' FROM '.$tableName.' ';
+		$query = trim($query, ',');
+		
+		$query .= ' FROM `'.$tableName.'` ';
         
         if ($conditions != '')
-            $query .= 'WHERE '.$conditions.' ';
+            $query .= ' WHERE '.$conditions.' ';
 
         if ($sortBy != '')
-            $query .= 'ORDER BY '.$sortBy.' '.$sort.' ';
+            $query .= ' ORDER BY '.$sortBy.' '.$sort.' ';
 
-        $query .= 'LIMIT '.$start.', '.$amount.' ';
+        $query .= ' LIMIT '.$start.', '.$amount.' ';
 
         $result = $database->execQuery($query);
         if (!$result)
         {
-            self::$staticErrors[] = 'The database query failed for some reason!';
+            $staticError  = 'getMany(): The database query failed because: ';
+			$staticError .= $database->error.' ';
+			$staticError .= 'This was likely due to a mismatch between the database structure and the ';
+			$staticError .= 'columns and/or table name you specified in the constructor of this object!';
+			self::$staticErrors[] = $staticError;
             return false;
         }
 
         $rows = $database->getAllRows();
         if (!$rows)
         {
-            self::$staticErrors[] = 'Failed to get the records from the database!';
+			// There might just be no rows returned
+			if ( empty($rows) )
+				return array();
+		
+            self::$staticErrors[] = 'getMany(): Failed to get the records from the database!';
             return false;
         }
 
@@ -2183,4 +2415,25 @@ abstract class Wallop
 	// End of database installation functions
 }
 
+
+/* Does a simple string replace once
+ * $found is set to true if the string is found
+ * Credit to nick on php.net: http://www.php.net/manual/en/function.str-replace.php#86177
+ */
+function str_replace_once($search, $replace, $subject, &$found = null)
+{
+    $firstChar = strpos($subject, $search);
+    if($firstChar !== false)
+	{
+        $beforeStr = substr($subject,0,$firstChar);
+        $afterStr = substr($subject, $firstChar + strlen($search));
+		$found = true;
+        return $beforeStr.$replace.$afterStr;
+    } 
+	else 
+	{
+		$found = false;
+        return $subject;
+    }
+}
 ?>
